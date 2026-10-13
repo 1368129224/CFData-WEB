@@ -1,4 +1,5 @@
 bin/
+fork-bin/
 build/
 dist/
 coverage.out

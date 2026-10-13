@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	requestURL       = "speed.cloudflare.com/cdn-cgi/trace"
-	scanModeTCPing   = "tcping"
-	scanModeHTTPing  = "httping"
+	requestURL      = "speed.cloudflare.com/cdn-cgi/trace"
+	scanModeTCPing  = "tcping"
+	scanModeHTTPing = "httping"
 )
 
 func latencyMultiplier(scanMode string, isTLS bool) float64 {
@@ -95,6 +95,7 @@ type iptestResult struct {
 	originalInput  string
 	port           int
 	dataCenter     string
+	dcCountry      string
 	locCode        string
 	region         string
 	city           string
@@ -126,6 +127,7 @@ type nsbScanMessage struct {
 	Port           string `json:"port"`
 	TLS            string `json:"tls,omitempty"`
 	DC             string `json:"dc,omitempty"`
+	DCCountry      string `json:"dcCountry,omitempty"`
 	Loc            string `json:"loc,omitempty"`
 	Region         string `json:"region,omitempty"`
 	City           string `json:"city,omitempty"`
@@ -164,6 +166,7 @@ func (r *iptestResult) toNSBMessage(speedStr string) nsbScanMessage {
 		Port:           strconv.Itoa(r.port),
 		TLS:            strconv.FormatBool(r.visitScheme == "https"),
 		DC:             r.dataCenter,
+		DCCountry:      r.dcCountry,
 		Loc:            r.locCode,
 		Region:         r.region,
 		City:           r.city,
@@ -201,6 +204,7 @@ func (r *iptestResult) toCompactNSBMessage(speedStr string) nsbScanMessage {
 		Port:           strconv.Itoa(r.port),
 		TLS:            strconv.FormatBool(r.visitScheme == "https"),
 		DC:             r.dataCenter,
+		DCCountry:      r.dcCountry,
 		Loc:            r.locCode,
 		Region:         r.region,
 		City:           r.city,

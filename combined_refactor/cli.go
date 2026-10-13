@@ -59,27 +59,28 @@ type cliConfig struct {
 }
 
 type cliExportConfig struct {
-	ConfigFile    string `json:"-"`
-	Format        string `json:"outformat"`
-	Fields        string `json:"outfields"`
-	Custom        string `json:"outcustom"`
-	V6Bracket     bool   `json:"outv6bracket"`
-	V6BracketSet  bool   `json:"-"`
-	Separator     string `json:"outseparator"`
-	GitHub        bool   `json:"github"`
-	GitHubSet     bool   `json:"-"`
-	GHRepo        string `json:"ghrepo"`
-	GHBranch      string `json:"ghbranch"`
-	GHPath        string `json:"ghpath"`
-	GHMessage     string `json:"ghmessage"`
-	GHToken       string `json:"ghtoken"`
-	GHTokenFile   string `json:"ghtokenfile"`
-	GHUpload      string `json:"ghupload"`
-	EdgeTunnel    bool   `json:"edgetunnel"`
-	EdgeTunnelSet bool   `json:"-"`
-	ETHost        string `json:"ethost"`
-	ETPassword    string `json:"etpassword"`
-	ETMode        string `json:"etmode"`
+	ConfigFile       string `json:"-"`
+	Format           string `json:"outformat"`
+	Fields           string `json:"outfields"`
+	MinPerDataCenter int    `json:"outdcmincount"`
+	Custom           string `json:"outcustom"`
+	V6Bracket        bool   `json:"outv6bracket"`
+	V6BracketSet     bool   `json:"-"`
+	Separator        string `json:"outseparator"`
+	GitHub           bool   `json:"github"`
+	GitHubSet        bool   `json:"-"`
+	GHRepo           string `json:"ghrepo"`
+	GHBranch         string `json:"ghbranch"`
+	GHPath           string `json:"ghpath"`
+	GHMessage        string `json:"ghmessage"`
+	GHToken          string `json:"ghtoken"`
+	GHTokenFile      string `json:"ghtokenfile"`
+	GHUpload         string `json:"ghupload"`
+	EdgeTunnel       bool   `json:"edgetunnel"`
+	EdgeTunnelSet    bool   `json:"-"`
+	ETHost           string `json:"ethost"`
+	ETPassword       string `json:"etpassword"`
+	ETMode           string `json:"etmode"`
 }
 
 type cliFileConfig struct {
@@ -123,6 +124,7 @@ type cliFileConfig struct {
 	Separator       string  `json:"outseparator"`
 	OutStartRow     int     `json:"outstartrow"`
 	OutEndRow       int     `json:"outendrow"`
+	OutDCMinCount   int     `json:"outdcmincount"`
 	GitHub          bool    `json:"github"`
 	GHRepo          string  `json:"ghrepo"`
 	GHBranch        string  `json:"ghbranch"`
@@ -220,6 +222,7 @@ var (
 		{name: "outv6bracket", description: "TXT 导出时对 IPv6 地址加方括号（[IPv6]:端口）", defaultValue: "true"},
 		{name: "outseparator", description: "TXT 导出字段分隔符；写 空格 表示空格", defaultValue: "-"},
 		{name: "outqualified", description: "导出/上传合格结果筛选：all 全部 / qualified 仅合格 / unqualified 仅不合格", defaultValue: "all"},
+		{name: "outdcmincount", description: "每个数据中心至少导出多少个 IP；仅统计通过延迟和速度条件的结果，0=关闭；为满足配额可能超过结束行", defaultValue: "0"},
 		{name: "outiptype", description: "导出/上传 IP 类型筛选：all、ipv4 或 ipv6", defaultValue: "all"},
 		{name: "outstartrow", description: "导出/上传开始行（筛选后第 1 行起计），只影响导出和上传内容", defaultValue: "1"},
 		{name: "outendrow", description: "导出/上传结束行；0 表示至末尾，只影响导出和上传内容", defaultValue: "20"},
@@ -237,11 +240,11 @@ var (
 		{name: "etmode", description: "edgetunnel 上传模式：overwrite 覆盖 / append 追加", defaultValue: "overwrite"},
 	}
 	cliOfficialFlags = []cliFlagInfo{
-		{name: "offiptype", description: "官方模式 IP 类型：4 或 6", defaultValue: "4"},
+		{name: "offiptype", description: "官方模式 IP 类型：4=IPv4，6=IPv6，46=IPv4+IPv6", defaultValue: "4"},
 		{name: "offthreads", description: "官方模式扫描并发数", defaultValue: "100"},
 		{name: "offport", description: "官方模式详细测试与测速端口", defaultValue: "443"},
 		{name: "offdelay", description: "官方模式延迟阈值（毫秒）", defaultValue: "500"},
-		{name: "offdc", description: "指定数据中心；不填时自动选择最低延迟数据中心", defaultValue: ""},
+		{name: "offdc", description: "指定 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,HK,US；不填时自动选择最低延迟数据中心", defaultValue: ""},
 		{name: "offspeedlimit", description: "官方模式测速达标结果上限；0 表示关闭官方测速", defaultValue: "5"},
 		{name: "offspeedmin", description: "官方模式测速达标下限，单位 MB/s", defaultValue: "0.1"},
 		{name: "offurl", description: "官方模式测速下载地址；auto 表示由后端自动选择内置测速源", defaultValue: autoSpeedURLValue},
@@ -252,7 +255,7 @@ var (
 		{name: "nsbthreads", description: "非标模式扫描并发数", defaultValue: "100"},
 		{name: "nsbdelay", description: "非标模式延迟阈值（毫秒）；0 表示不筛延迟", defaultValue: "0"},
 		{name: "nsbfallbackport", description: "非标输入缺省端口；不填时随 TLS 自动使用 443/80", defaultValue: "0"},
-		{name: "nsbdc", description: "非标模式指定结果数据中心；留空不限制", defaultValue: ""},
+		{name: "nsbdc", description: "非标模式指定 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,HK,US；留空不限制", defaultValue: ""},
 		{name: "nsbspeedtest", description: "非标测速线程数；0 表示不测速。多 IP 并发影响实际速度，需要准确应设为 1", defaultValue: "0"},
 		{name: "nsburl", description: "非标模式测速下载地址；auto 表示由后端自动选择内置测速源", defaultValue: autoSpeedURLValue},
 		{name: "nsbtls", description: "非标模式是否启用 TLS", defaultValue: "true"},
@@ -271,20 +274,21 @@ func registerCLIFlags() *cliConfig {
 	flag.BoolVar(&cfg.enabled, "cli", false, "启用命令行模式（默认启动 Web）")
 	flag.StringVar(&cfg.mode, "mode", "official", "CLI 模式：official 或 nsb")
 	flag.StringVar(&cfg.scanMode, "scanmode", "tcping", "扫描方式：tcping（默认，TCP 握手延迟）或 httping（HTTP TTFB，延迟比 tcping 高属正常，不同模式数据不可对比）")
-	flag.IntVar(&cfg.ipType, "offiptype", 4, "官方模式 IP 类型：4 或 6")
+	flag.IntVar(&cfg.ipType, "offiptype", 4, "官方模式 IP 类型：4=IPv4，6=IPv6，46=IPv4+IPv6")
 	flag.IntVar(&cfg.offThreads, "offthreads", 100, "官方扫描并发数")
 	flag.IntVar(&cfg.nsbThreads, "nsbthreads", 100, "非标扫描并发数")
 	flag.IntVar(&cfg.speedTest, "nsbspeedtest", 0, "非标测速线程数；表示同时测速的 IP 数量，0 表示不测速。多 IP 并发测速会影响实际下载速度，需要准确速度应设置为 1")
 	flag.IntVar(&cfg.port, "offport", 443, "目标测试端口")
 	flag.IntVar(&cfg.offDelay, "offdelay", 500, "官方延迟阈值（毫秒）")
 	flag.IntVar(&cfg.nsbDelay, "nsbdelay", 0, "非标延迟阈值（毫秒）；0 表示不筛延迟")
-	flag.StringVar(&cfg.dc, "offdc", "", "官方模式指定数据中心，不填则自动选择最低延迟数据中心")
+	flag.StringVar(&cfg.dc, "offdc", "", "官方模式指定 colo 或 ISO 国家码，逗号分隔可多选，如 HKG,HK,US；不填则自动选择最低延迟数据中心")
 	flag.StringVar(&cfg.file, "nsbfile", "", "非标模式输入文件路径")
 	flag.StringVar(&cfg.sourceURL, "nsbsourceurl", "", "非标模式网络输入 URL")
 	flag.IntVar(&cfg.nsbFallbackPort, "nsbfallbackport", 0, "非标输入缺省端口；不填时随 TLS 自动使用 443/80")
 	flag.StringVar(&cfg.outIPType, "outiptype", "all", "导出/上传 IP 类型筛选：all、ipv4 或 ipv6")
 	flag.StringVar(&cfg.outQualified, "outqualified", "all", "导出/上传合格结果筛选：all、qualified 或 unqualified")
-	flag.StringVar(&cfg.nsbDC, "nsbdc", "", "非标模式指定结果数据中心")
+	flag.IntVar(&cfg.export.MinPerDataCenter, "outdcmincount", 0, "每个数据中心至少导出多少个 IP；只计入通过延迟与速度条件的结果，0=关闭")
+	flag.StringVar(&cfg.nsbDC, "nsbdc", "", "非标模式指定 colo 或 ISO 国家码，逗号分隔可多选，如 HKG,HK,US")
 	flag.StringVar(&cfg.outFile, "out", "cfdata-results", "输出文件名")
 	flag.IntVar(&cfg.startRow, "outstartrow", 1, "导出/上传开始行（筛选后第 1 行起计）")
 	flag.IntVar(&cfg.endRow, "outendrow", 20, "导出/上传结束行；0 表示至末尾")
@@ -494,19 +498,22 @@ func validateCLIOutputConfig(cfg *cliConfig) error {
 	if cfg.endRow > 0 && cfg.endRow < cfg.startRow {
 		return fmt.Errorf("-outendrow 不能小于 -outstartrow")
 	}
+	if cfg.export.MinPerDataCenter < 0 {
+		return fmt.Errorf("-outdcmincount 不能为负数")
+	}
 	return nil
 }
 
 func defaultCLIExportConfig() cliExportConfig {
-	return cliExportConfig{Format: "txt", Fields: "compact", Custom: "", V6Bracket: true, Separator: "-", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results", EdgeTunnel: false, ETMode: "overwrite"}
+	return cliExportConfig{Format: "txt", Fields: "compact", MinPerDataCenter: 0, Custom: "", V6Bracket: true, Separator: "-", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results", EdgeTunnel: false, ETMode: "overwrite"}
 }
 
 func defaultCLIFileConfig() cliFileConfig {
-	return cliFileConfig{CLI: false, Mode: "official", ScanMode: "tcping", IPType: 4, Threads: 100, NSBThreads: 100, Out: "cfdata-results", SpeedTest: 0, Progress: true, NoColor: false, URL: autoSpeedURLValue, NSBURL: autoSpeedURLValue, DNS: defaultDNSServers, Debug: false, CompactIPv4: false, TestPort: 443, Delay: 500, NSBDelay: 0, DC: "", SpeedLimit: 5, SpeedMin: 0.1, File: "", SourceURL: "", NSBFallbackPort: 0, OutIPType: "all", OutQualified: "all", NSBDC: "", TLS: true, Compact: true, ResultLimit: 1000, NSBSpeedMin: 0.1, NSBSpeedLimit: 5, Format: "txt", Fields: "compact", Custom: "", V6Bracket: true, Separator: "-", OutStartRow: 1, OutEndRow: 20, GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results", EdgeTunnel: false, ETMode: "overwrite"}
+	return cliFileConfig{CLI: false, Mode: "official", ScanMode: "tcping", IPType: 4, Threads: 100, NSBThreads: 100, Out: "cfdata-results", SpeedTest: 0, Progress: true, NoColor: false, URL: autoSpeedURLValue, NSBURL: autoSpeedURLValue, DNS: defaultDNSServers, Debug: false, CompactIPv4: false, TestPort: 443, Delay: 500, NSBDelay: 0, DC: "", SpeedLimit: 5, SpeedMin: 0.1, File: "", SourceURL: "", NSBFallbackPort: 0, OutIPType: "all", OutQualified: "all", NSBDC: "", TLS: true, Compact: true, ResultLimit: 1000, NSBSpeedMin: 0.1, NSBSpeedLimit: 5, Format: "txt", Fields: "compact", Custom: "", V6Bracket: true, Separator: "-", OutStartRow: 1, OutEndRow: 20, OutDCMinCount: 0, GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results", EdgeTunnel: false, ETMode: "overwrite"}
 }
 
 func (c cliFileConfig) Export() cliExportConfig {
-	return cliExportConfig{Format: c.Format, Fields: c.Fields, Custom: c.Custom, V6Bracket: c.V6Bracket, V6BracketSet: true, Separator: c.Separator, GitHub: c.GitHub, GitHubSet: true, GHRepo: c.GHRepo, GHBranch: c.GHBranch, GHPath: c.GHPath, GHMessage: c.GHMessage, GHToken: c.GHToken, GHTokenFile: c.GHTokenFile, GHUpload: c.GHUpload, EdgeTunnel: c.EdgeTunnel, EdgeTunnelSet: true, ETHost: c.ETHost, ETPassword: c.ETPassword, ETMode: c.ETMode}
+	return cliExportConfig{Format: c.Format, Fields: c.Fields, MinPerDataCenter: c.OutDCMinCount, Custom: c.Custom, V6Bracket: c.V6Bracket, V6BracketSet: true, Separator: c.Separator, GitHub: c.GitHub, GitHubSet: true, GHRepo: c.GHRepo, GHBranch: c.GHBranch, GHPath: c.GHPath, GHMessage: c.GHMessage, GHToken: c.GHToken, GHTokenFile: c.GHTokenFile, GHUpload: c.GHUpload, EdgeTunnel: c.EdgeTunnel, EdgeTunnelSet: true, ETHost: c.ETHost, ETPassword: c.ETPassword, ETMode: c.ETMode}
 }
 
 type cliExportConfigTemplate struct {
@@ -544,6 +551,9 @@ func mergeCLIExportConfig(dst *cliExportConfig, src cliExportConfig, onlyProvide
 	}
 	if isSet("outfields", src.Fields) {
 		dst.Fields = src.Fields
+	}
+	if !onlyProvided || (len(provided) > 0 && provided[0]["outdcmincount"]) {
+		dst.MinPerDataCenter = src.MinPerDataCenter
 	}
 	if isSet("outcustom", src.Custom) {
 		dst.Custom = src.Custom
@@ -759,7 +769,7 @@ func buildCLIConfigHelp() []cliConfigHelp {
 		{Name: "cli", Description: "CLI 模式开关；已废弃本字段，CLI 仅由命令行 -cli 控制（保留仅为兼容旧配置）", Default: "false", Options: []string{"true", "false"}},
 		{Name: "mode", Description: "运行模式", Default: "official", Options: []string{"official", "nsb"}},
 		{Name: "scanmode", Description: "扫描方式；tcping：仅测量 TCP 握手延迟（默认），httping：测量 HTTP TTFB 全链路延迟，延迟比 tcping 高属正常，不同模式数据不可互相比较", Default: "tcping", Options: []string{"tcping", "httping"}},
-		{Name: "offiptype", Description: "官方模式 IP 类型", Default: "4", Options: []string{"4", "6"}},
+		{Name: "offiptype", Description: "官方模式 IP 类型：46 表示 IPv4 + IPv6", Default: "4", Options: []string{"4", "6", "46"}},
 		{Name: "offthreads", Description: "官方扫描并发数", Default: "100"},
 		{Name: "nsbthreads", Description: "非标扫描并发数", Default: "100"},
 		{Name: "out", Description: "输出文件名", Default: "cfdata-results"},
@@ -775,13 +785,13 @@ func buildCLIConfigHelp() []cliConfigHelp {
 		{Name: "offport", Description: "官方模式测试端口", Default: "443"},
 		{Name: "offdelay", Description: "官方延迟阈值，单位毫秒", Default: "500"},
 		{Name: "nsbdelay", Description: "非标延迟阈值，单位毫秒；0=不筛延迟", Default: "0"},
-		{Name: "offdc", Description: "官方模式指定数据中心；留空自动选择最低延迟数据中心", Default: ""},
+		{Name: "offdc", Description: "官方模式指定 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,HK,US，留空自动选择最低延迟数据中心", Default: ""},
 		{Name: "offspeedlimit", Description: "官方模式测速达标结果上限；0 表示关闭官方测速", Default: "5"},
 		{Name: "offspeedmin", Description: "官方模式测速达标下限，单位 MB/s", Default: "0.1"},
 		{Name: "nsbfile", Description: "非标模式输入文件路径", Default: ""},
 		{Name: "nsbsourceurl", Description: "非标模式网络输入 URL", Default: ""},
 		{Name: "nsbfallbackport", Description: "非标输入缺省端口；不填时随 TLS 自动使用 443/80；显式设置时必须为 1-65535", Default: "自动"},
-		{Name: "nsbdc", Description: "非标模式指定结果数据中心；留空不限制", Default: ""},
+		{Name: "nsbdc", Description: "非标模式指定 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,HK,US，留空不限制", Default: ""},
 		{Name: "nsbtls", Description: "非标模式启用 TLS；缺省端口随 TLS 为 443/80", Default: "true", Options: []string{"true", "false"}},
 		{Name: "nsbcompact", Description: "非标模式本地 CSV 是否默认精简字段", Default: "true", Options: []string{"true", "false"}},
 		{Name: "nsbresultlimit", Description: "非标模式延迟测试结果上限；必须为非 0 正整数", Default: "1000"},
@@ -793,6 +803,7 @@ func buildCLIConfigHelp() []cliConfigHelp {
 		{Name: "outv6bracket", Description: "TXT 导出时对 IPv6 地址加方括号（[IPv6]:端口），仅对 IPv6 行生效", Default: "true", Options: []string{"true", "false"}},
 		{Name: "outseparator", Description: "TXT 导出字段分隔符；写 空格 表示空格", Default: "-"},
 		{Name: "outqualified", Description: "导出/上传合格结果筛选；只影响导出和上传内容", Default: "all", Options: []string{"all", "qualified", "unqualified"}},
+		{Name: "outdcmincount", Description: "每个数据中心至少导出多少个达标 IP；只统计延迟与速度均合格的结果，0=关闭；为满足配额可能超过结束行", Default: "0"},
 		{Name: "outiptype", Description: "导出/上传 IP 类型筛选；只影响导出和上传内容", Default: "all", Options: []string{"all", "ipv4", "ipv6"}},
 		{Name: "outstartrow", Description: "导出/上传开始行（筛选后第 1 行起计）；只影响导出和上传内容", Default: "1"},
 		{Name: "outendrow", Description: "导出/上传结束行；0 表示至末尾；只影响导出和上传内容", Default: "20"},
@@ -1124,8 +1135,8 @@ func handleCLIMessage(cfg *cliConfig, session *appSession, msgType string, data 
 }
 
 func runOfficialCLI(cfg *cliConfig) error {
-	if cfg.ipType != 4 && cfg.ipType != 6 {
-		return errors.New("官方模式 -offiptype 仅支持 4 或 6")
+	if len(officialIPTypes(cfg.ipType)) == 0 {
+		return errors.New("官方模式 -offiptype 仅支持 4、6 或 46（IPv4 + IPv6）")
 	}
 	if cfg.threads <= 0 {
 		cfg.threads = 100
@@ -1340,8 +1351,11 @@ func printCLIConfig(cfg *cliConfig) {
 		dnsLabel = "系统默认（回退 " + customDNSServer + "）"
 	}
 	ipVersionLabel := "IPv4"
-	if cfg.ipType == 6 {
+	switch cfg.ipType {
+	case 6:
 		ipVersionLabel = "IPv6"
+	case 46:
+		ipVersionLabel = "IPv4 + IPv6"
 	}
 	outputRows := func() {
 		line("开始行", strconv.Itoa(cfg.startRow))
@@ -1351,6 +1365,9 @@ func printCLIConfig(cfg *cliConfig) {
 		} else {
 			line("结束行", "不限")
 			line("输出总量", "不限")
+		}
+		if cfg.export.MinPerDataCenter > 0 {
+			line("每中心最少达标 IP", strconv.Itoa(cfg.export.MinPerDataCenter))
 		}
 	}
 
@@ -1792,15 +1809,15 @@ func resolveCLIFields(spec, format string, rows []cliResultRow, customFields []c
 	}
 	if spec == "" || spec == "compact" {
 		if format == "txt" {
-			return appendCustomFields([]string{"ipport", "dc", "loc"})
+			if rowsAreOfficial(rows) {
+				return appendCustomFields([]string{"ipport", "latency", "lossRate", "speed", "dc", "dcCountry"})
+			}
+			return appendCustomFields([]string{"ipport", "latency", "lossRate", "speed", "dc", "dcCountry", "loc"})
 		}
 		if rowsAreOfficial(rows) {
-			if rowsHaveField(rows, "speed") {
-				return appendCustomFields([]string{"ip", "port", "latency", "speed", "dc", "region", "city"})
-			}
-			return appendCustomFields([]string{"ip", "port", "latency", "dc", "region", "city"})
+			return appendCustomFields([]string{"ip", "port", "latency", "lossRate", "speed", "dc", "dcCountry", "region", "city"})
 		}
-		return appendCustomFields([]string{"ip", "port", "tls", "latency", "speed", "outboundIP", "ipType", "originalInput", "dc", "loc", "region", "city", "asnNumber", "asnOrg"})
+		return appendCustomFields([]string{"ip", "port", "tls", "lossRate", "latency", "speed", "outboundIP", "ipType", "originalInput", "dc", "dcCountry", "loc", "region", "city", "asnNumber", "asnOrg"})
 	}
 	if spec == "ipport" {
 		return appendCustomFields([]string{"ipport"})
@@ -1854,15 +1871,6 @@ func rowsAreOfficial(rows []cliResultRow) bool {
 		}
 	}
 	return true
-}
-
-func rowsHaveField(rows []cliResultRow, field string) bool {
-	for _, row := range rows {
-		if strings.TrimSpace(row[field]) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func hasAnyCLIField(row cliResultRow, fields ...string) bool {
@@ -1945,7 +1953,7 @@ func officialScanRows(scanResults []ScanResult, scanMode string) []cliResultRow 
 	rows := make([]cliResultRow, 0, len(scanResults))
 	modeLabel := scanModeLabel(scanMode)
 	for _, res := range scanResults {
-		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(res.Port), "ipport": fmt.Sprintf("%s:%d", res.IP, res.Port), "dc": res.DataCenter, "dcCountry": res.DCCountry, "region": res.Region, "city": res.City, "latency": res.LatencyStr, "scanMode": modeLabel})
+		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(res.Port), "ipport": fmt.Sprintf("%s:%d", res.IP, res.Port), "dc": res.DataCenter, "dcCountry": res.DCCountry, "region": res.Region, "city": res.City, "latency": res.LatencyStr, "lossRate": "未测", "scanMode": modeLabel})
 	}
 	return rows
 }
@@ -1968,7 +1976,7 @@ func officialResultRows(scanResults []ScanResult, testResults []TestResult, scan
 		if port == 0 {
 			port = res.Port
 		}
-		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(port), "ipport": fmt.Sprintf("%s:%d", res.IP, port), "dc": scan.DataCenter, "dcCountry": scan.DCCountry, "region": scan.Region, "city": scan.City, "latency": fmt.Sprintf("%dms", res.AvgLatency/time.Millisecond), "speed": res.Speed, "scanMode": modeLabel})
+		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(port), "ipport": fmt.Sprintf("%s:%d", res.IP, port), "dc": scan.DataCenter, "dcCountry": scan.DCCountry, "region": scan.Region, "city": scan.City, "latency": fmt.Sprintf("%dms", res.AvgLatency/time.Millisecond), "lossRate": fmt.Sprintf("%.0f%%", res.LossRate*100), "speed": res.Speed, "scanMode": modeLabel})
 		if rows[len(rows)-1]["dc"] == "" {
 			rows[len(rows)-1]["dc"] = res.DataCenter
 			rows[len(rows)-1]["dcCountry"] = res.DCCountry
@@ -2105,8 +2113,85 @@ func sliceCLIResultRowRange(rows []cliResultRow, start, end int) []cliResultRow 
 
 func applyCLIExportFilters(cfg *cliConfig, rows []cliResultRow, speedMin float64) []cliResultRow {
 	rows = filterCLIResultRowsByIPType(rows, cfg.outIPType)
+	if cfg.export.MinPerDataCenter > 0 {
+		allRows := rows
+		qualifiedRows := filterCLIResultRowsByQualified(rows, "qualified", speedMin)
+		selectedRows := sliceCLIResultRowRange(qualifiedRows, cfg.startRow, cfg.endRow)
+		dataCenterFilter := cfg.dc
+		if strings.EqualFold(strings.TrimSpace(cfg.mode), "nsb") {
+			dataCenterFilter = cfg.nsbDC
+		}
+		result, counts := ensureMinimumPerDataCenter(selectedRows, qualifiedRows, cfg.export.MinPerDataCenter, dataCenterFilter)
+		reportPerDataCenterShortfalls(allRows, counts, cfg.export.MinPerDataCenter, dataCenterFilter)
+		return result
+	}
 	rows = filterCLIResultRowsByQualified(rows, cfg.outQualified, speedMin)
 	return sliceCLIResultRowRange(rows, cfg.startRow, cfg.endRow)
+}
+
+func ensureMinimumPerDataCenter(selectedRows, qualifiedRows []cliResultRow, minimum int, dataCenterFilter string) ([]cliResultRow, map[string]int) {
+	result := append([]cliResultRow(nil), selectedRows...)
+	counts := make(map[string]int)
+	seenRows := make(map[string]bool)
+	for _, row := range result {
+		identity := cliExportRowIdentity(row)
+		if seenRows[identity] {
+			continue
+		}
+		seenRows[identity] = true
+		group := dataCenterQuotaGroup(row["dc"], row["dcCountry"], dataCenterFilter)
+		if group != "" {
+			counts[group]++
+		}
+	}
+	for _, row := range qualifiedRows {
+		group := dataCenterQuotaGroup(row["dc"], row["dcCountry"], dataCenterFilter)
+		if group == "" || counts[group] >= minimum {
+			continue
+		}
+		identity := cliExportRowIdentity(row)
+		if seenRows[identity] {
+			continue
+		}
+		result = append(result, row)
+		seenRows[identity] = true
+		counts[group]++
+	}
+	return result, counts
+}
+
+func cliExportRowIdentity(row cliResultRow) string {
+	ip := strings.TrimSpace(row["ip"])
+	if ip != "" {
+		return ip
+	}
+	if ipPort := strings.TrimSpace(row["ipport"]); ipPort != "" {
+		return ipPort
+	}
+	return strings.TrimSpace(row["dc"]) + "\x00" + strings.TrimSpace(row["originalInput"])
+}
+
+func reportPerDataCenterShortfalls(rows []cliResultRow, counts map[string]int, minimum int, dataCenterFilter string) {
+	centers := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		group := dataCenterQuotaGroup(row["dc"], row["dcCountry"], dataCenterFilter)
+		if group != "" && !seen[group] {
+			seen[group] = true
+			centers = append(centers, group)
+		}
+	}
+	sort.Strings(centers)
+	for _, group := range centers {
+		if counts[group] < minimum {
+			label := strings.TrimPrefix(strings.TrimPrefix(group, "country:"), "colo:")
+			kind := "数据中心"
+			if strings.HasPrefix(group, "country:") {
+				kind = "落地国家"
+			}
+			sendLog(fmt.Sprintf("[export] %s %s: 仅找到 %d/%d 个同时通过延迟和速度筛选的 IP；未使用不合格结果补足", kind, label, counts[group], minimum))
+		}
+	}
 }
 
 func normalizeIPTypeFilter(value string) string {

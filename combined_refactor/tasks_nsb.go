@@ -200,7 +200,7 @@ func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enable
 	if dataCenter == "" {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "Trace校验失败", detail: "trace 中未返回 colo 字段"}
 	}
-	if strings.TrimSpace(targetDC) != "" && !strings.EqualFold(dataCenter, strings.TrimSpace(targetDC)) {
+	if !matchesDataCenterOrCountryFilter(dataCenter, locationMap[dataCenter].Cca2, targetDC) {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, targetDC)}
 	}
 
@@ -210,6 +210,7 @@ func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enable
 		ipAddr:      ipAddr,
 		port:        port,
 		dataCenter:  dataCenter,
+		dcCountry:   loc.Cca2,
 		locCode:     locCode,
 		region:      loc.Region,
 		city:        loc.City,
@@ -356,7 +357,7 @@ func scanNSBEntry(ctx context.Context, item string, fallbackPort int, enableTLS 
 	if dataCenter == "" {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "Trace校验失败", detail: "trace 中未返回 colo 字段"}
 	}
-	if strings.TrimSpace(targetDC) != "" && !strings.EqualFold(dataCenter, strings.TrimSpace(targetDC)) {
+	if !matchesDataCenterOrCountryFilter(dataCenter, locationMap[dataCenter].Cca2, targetDC) {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, targetDC)}
 	}
 
@@ -366,6 +367,7 @@ func scanNSBEntry(ctx context.Context, item string, fallbackPort int, enableTLS 
 		ipAddr:      ipAddr,
 		port:        port,
 		dataCenter:  dataCenter,
+		dcCountry:   loc.Cca2,
 		locCode:     locCode,
 		region:      loc.Region,
 		city:        loc.City,
@@ -976,28 +978,29 @@ func nsbMessageToResult(row nsbScanMessage) (iptestResult, bool) {
 		return iptestResult{}, false
 	}
 	return iptestResult{
-		ipAddr:       strings.TrimSpace(row.IP),
-		port:         port,
-		dataCenter:   row.DC,
-		locCode:      row.Loc,
-		region:       row.Region,
-		city:         row.City,
-		latency:      row.Latency,
-		lossRate:     parsePercent(row.LossRate),
-		outboundIP:   row.OutboundIP,
-		ipType:       row.IPType,
-		asnNumber:    row.ASNNumber,
-		asnOrg:       row.ASNOrg,
-		visitScheme:  firstNonEmpty(row.VisitScheme, mapBoolTLS(row.TLS)),
-		tlsVersion:   row.TLSVersion,
-		sni:          row.SNI,
-		httpVersion:  row.HTTPVersion,
-		warp:         row.Warp,
-		gateway:      row.Gateway,
-		rbi:          row.RBI,
-		kex:          row.Kex,
-		timestamp:    row.Timestamp,
-		speedText:    row.Speed,
+		ipAddr:        strings.TrimSpace(row.IP),
+		port:          port,
+		dataCenter:    row.DC,
+		dcCountry:     firstNonEmpty(row.DCCountry, locationMap[row.DC].Cca2),
+		locCode:       row.Loc,
+		region:        row.Region,
+		city:          row.City,
+		latency:       row.Latency,
+		lossRate:      parsePercent(row.LossRate),
+		outboundIP:    row.OutboundIP,
+		ipType:        row.IPType,
+		asnNumber:     row.ASNNumber,
+		asnOrg:        row.ASNOrg,
+		visitScheme:   firstNonEmpty(row.VisitScheme, mapBoolTLS(row.TLS)),
+		tlsVersion:    row.TLSVersion,
+		sni:           row.SNI,
+		httpVersion:   row.HTTPVersion,
+		warp:          row.Warp,
+		gateway:       row.Gateway,
+		rbi:           row.RBI,
+		kex:           row.Kex,
+		timestamp:     row.Timestamp,
+		speedText:     row.Speed,
 		originalInput: row.OriginalInput,
 	}, true
 }
@@ -1172,9 +1175,9 @@ func nsbCSVRows(results []iptestResult, includeSpeed bool, compact bool, scanMod
 
 func nsbCSVHeaders(compact bool, scanMode string) []string {
 	if compact {
-		return []string{"IP地址", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "原始输入", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
+		return []string{"IP地址", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "原始输入", "数据中心", "落地区域", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
 	}
-	headers := []string{"IP地址", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "原始输入", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
+	headers := []string{"IP地址", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "原始输入", "数据中心", "落地区域", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
 	headers = append(headers, "访问协议", "TLS版本", "SNI", "HTTP版本", "WARP", "Gateway", "RBI", "密钥交换", "时间戳")
 	return headers
 }
@@ -1204,6 +1207,7 @@ func nsbCSVRow(res iptestResult, includeSpeed bool, compact bool, scanMode strin
 			res.ipType,
 			res.originalInput,
 			res.dataCenter,
+			fallbackDash(res.dcCountry),
 			res.locCode,
 			res.region,
 			res.city,
@@ -1223,6 +1227,7 @@ func nsbCSVRow(res iptestResult, includeSpeed bool, compact bool, scanMode strin
 		res.ipType,
 		res.originalInput,
 		res.dataCenter,
+		fallbackDash(res.dcCountry),
 		res.locCode,
 		res.region,
 		res.city,
