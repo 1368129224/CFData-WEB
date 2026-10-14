@@ -439,6 +439,74 @@ func parseTraceResponse(body string) map[string]string {
 	return result
 }
 
+func parseDataCenterList(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		switch r {
+		case ',', '，', ';', '；', '|', ' ', '\t', '\r', '\n':
+			return true
+		default:
+			return false
+		}
+	})
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		dataCenter := strings.ToUpper(strings.TrimSpace(part))
+		if dataCenter == "" {
+			continue
+		}
+		if _, ok := seen[dataCenter]; ok {
+			continue
+		}
+		seen[dataCenter] = struct{}{}
+		result = append(result, dataCenter)
+	}
+	return result
+}
+
+func matchesDataCenterFilter(dataCenter, filter string) bool {
+	return matchesDataCenterOrCountryFilter(dataCenter, "", filter)
+}
+
+func matchesDataCenterOrCountryFilter(dataCenter, countryCode, filter string) bool {
+	if strings.TrimSpace(filter) == "" {
+		return true
+	}
+	for _, selected := range parseDataCenterList(filter) {
+		if strings.EqualFold(dataCenter, selected) || (isISOAlpha2CountryCode(selected) && strings.EqualFold(countryCode, selected)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isISOAlpha2CountryCode(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 2 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return true
+}
+
+func dataCenterQuotaGroup(dataCenter, countryCode, configuredFilter string) string {
+	dataCenter = strings.ToUpper(strings.TrimSpace(dataCenter))
+	countryCode = strings.ToUpper(strings.TrimSpace(countryCode))
+	for _, selected := range parseDataCenterList(configuredFilter) {
+		if isISOAlpha2CountryCode(selected) && countryCode == selected {
+			return "country:" + countryCode
+		}
+	}
+	if dataCenter == "" {
+		return ""
+	}
+	return "colo:" + dataCenter
+}
+
 func getIPType(ip string) string {
 	if ip == "" {
 		return "未知"

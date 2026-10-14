@@ -1688,6 +1688,7 @@
                     <select id="officialIpType">
                         <option value="4">IPv4</option>
                         <option value="6">IPv6</option>
+                        <option value="46">IPv4 + IPv6</option>
                     </select>
                 </div>
                 <div class="option-item">
@@ -1736,8 +1737,8 @@
                     </select>
                 </div>
                 <div class="option-item">
-                    <span class="label" title="指定数据中心，留空自动选择">🏢 数据中心</span>
-                    <input id="officialTargetDC" type="text" value="" placeholder="留空自动选择" disabled>
+                    <span class="label" title="支持 colo 代码或 ISO 国家码；国家码匹配该国所有 colo">🏢 数据中心</span>
+                    <input id="officialTargetDC" type="text" value="" placeholder="如 HKG,HK,US；留空自动选择" disabled>
                 </div>
                 <div class="option-item full-width">
                     <span class="label">📡 扫描方式</span>
@@ -1832,8 +1833,8 @@
                     <input id="nsbSpeedTest" type="number" value="0" placeholder="0 关闭测速">
                 </div>
                 <div class="option-item">
-                    <span class="label" title="按数据中心筛选结果">🏢 数据中心</span>
-                    <input id="nsbTargetDC" type="text" value="" placeholder="留空不限制，如 NRT">
+                    <span class="label" title="支持 colo 代码或 ISO 国家码；国家码匹配该国所有 colo">🏢 数据中心</span>
+                    <input id="nsbTargetDC" type="text" value="" placeholder="如 HKG,HK,US；留空不限制">
                 </div>
                 <div class="option-item">
                     <span class="label" title="表格列数精简或完整">🧾 精简表格</span>
@@ -2083,6 +2084,10 @@
                             <option value="unqualified">仅导出不合格</option>
                         </select>
                     </div>
+                    <div class="modal-field">
+                        <label title="0=关闭；只从延迟和速度均合格的 IP 中补足；候选不足时只导出已有合格项，且可能超过结束行">每中心最少达标 IP</label>
+                        <input id="resultDCMinCount" type="number" value="0" min="0" step="1" oninput="updatePerDataCenterMinimum(this.value)">
+                    </div>
                     <div class="modal-field full">
                         <label>输出示例</label>
                         <pre class="result-preview" id="resultPreview">暂无预览</pre>
@@ -2244,6 +2249,10 @@
                             <option value="qualified">仅复制合格</option>
                             <option value="unqualified">仅复制不合格</option>
                         </select>
+                    </div>
+                    <div class="modal-field">
+                        <label title="0=关闭；只从延迟和速度均合格的 IP 中补足；候选不足时只导出已有合格项，且可能超过结束行">每中心最少达标 IP</label>
+                        <input id="copyDCMinCount" type="number" value="0" min="0" step="1" oninput="updatePerDataCenterMinimum(this.value)">
                     </div>
                     <div class="modal-field full">
                         <label>输出示例</label>
@@ -2734,6 +2743,9 @@
                     speedUrl: resolveSpeedTestUrl('nsbSpeedUrl', 'nsbSpeedUrlPreset'),
                     sourceUrl: val('nsbSourceUrl'),
                 },
+                export: {
+                    minPerDataCenter: getPerDataCenterMinimum(),
+                },
             };
         }
 
@@ -2746,6 +2758,7 @@
         function applyConfigValues(config) {
             const o = config.official || {};
             const n = config.nsb || {};
+            const e = config.export || {};
             setValue('officialScanMode', o.scanMode);
             setValue('officialIpType', o.ipType);
             setValue('officialTestPort', o.port);
@@ -2769,6 +2782,7 @@
             if (n.compactView) setValue('nsbCompactView', n.compactView);
             setValue('nsbOutFile', n.outFile);
             setValue('nsbSourceUrl', n.sourceUrl);
+            if (e.minPerDataCenter !== undefined) syncPerDataCenterMinimum(e.minPerDataCenter, true);
             if (o.speedUrl) applySpeedUrlConfig('officialSpeedUrl', 'officialSpeedUrlPreset', o.speedUrl);
             if (n.speedUrl) applySpeedUrlConfig('nsbSpeedUrl', 'nsbSpeedUrlPreset', n.speedUrl);
             syncOfficialSpeedConfigState();
@@ -2818,7 +2832,7 @@
                 return undefined;
             }
             const c = cliCfg.config || cliCfg;
-            const result = { official: {}, nsb: {} };
+            const result = { official: {}, nsb: {}, export: {} };
             const sm = pick(c, ['scanmode', 'scanMode']);
             if (sm !== undefined) { result.official.scanMode = sm; result.nsb.scanMode = sm; }
             result.official.ipType = pick(c, ['offiptype', 'iptype', 'ipType']);
@@ -2844,6 +2858,7 @@
             if (compact !== undefined) result.nsb.compactView = compact === true || String(compact).toLowerCase() === 'true' || String(compact) === '1' ? 'compact' : 'full';
             result.nsb.outFile = pick(c, ['out', 'nsbout', 'offout']);
             result.nsb.sourceUrl = pick(c, ['nsbsourceurl', 'sourceurl']);
+            result.export.minPerDataCenter = pick(c, ['outdcmincount']);
             return result;
         }
 
@@ -2852,6 +2867,8 @@
             try {
                 localStorage.removeItem('cfdata-config');
                 localStorage.removeItem('cfdata-autoload');
+                localStorage.removeItem('cfdata-export-dc-minimum');
+                syncPerDataCenterMinimum(0);
             } catch (e) {
                 showNoticeCard('删除配置失败: ' + (e.message || String(e)));
                 return;
@@ -3924,8 +3941,8 @@
             updateNSBSpeedButtons();
         }
 
-        const NSB_LIVE_HEADERS = ['IP地址', '端口号', 'TLS', '丢包率', '扫描方式', '网络延迟', '下载速度', '出站IP', 'IP类型', 'OriginalInput', '数据中心', '源IP位置', '地区', '城市', 'ASN号码', 'ASN组织', '访问协议', 'TLS版本', 'SNI', 'HTTP版本', 'WARP', 'Gateway', 'RBI', '密钥交换', '时间戳'];
-        const NSB_COMPACT_HEADERS = ['IP地址', '端口号', 'TLS', '丢包率', '扫描方式', '网络延迟', '下载速度', '出站IP', 'IP类型', 'OriginalInput', '数据中心', '源IP位置', '地区', '城市', 'ASN号码', 'ASN组织'];
+        const NSB_LIVE_HEADERS = ['IP地址', '端口号', 'TLS', '丢包率', '扫描方式', '网络延迟', '下载速度', '出站IP', 'IP类型', 'OriginalInput', '数据中心', '落地区域', '源IP位置', '地区', '城市', 'ASN号码', 'ASN组织', '访问协议', 'TLS版本', 'SNI', 'HTTP版本', 'WARP', 'Gateway', 'RBI', '密钥交换', '时间戳'];
+        const NSB_COMPACT_HEADERS = ['IP地址', '端口号', 'TLS', '丢包率', '扫描方式', '网络延迟', '下载速度', '出站IP', 'IP类型', 'OriginalInput', '数据中心', '落地区域', '源IP位置', '地区', '城市', 'ASN号码', 'ASN组织'];
 
         function normalizeNSBHeader(header) {
             if (header === 'IP') return 'IP地址';
@@ -3959,7 +3976,7 @@
         function nsbRowToArray(row) {
             return [
                 row.ip || '', row.port || '', row.tls ?? '-', row.lossRate || '0%', getScanModeLabel(), row.latency || '-', row.speed || '-',
-                row.outboundIP || '-', row.ipType || '-', row.originalInput || '', row.dc || '-', row.loc || '-',
+                row.outboundIP || '-', row.ipType || '-', row.originalInput || '', row.dc || '-', row.dcCountry || '-', row.loc || '-',
                 row.region || '-', row.city || '-', row.asnNumber || '-', row.asnOrg || '-',
                 row.visitScheme || '-', row.tlsVersion || '-', row.sni || '-', row.httpVersion || '-',
                 row.warp || '-', row.gateway || '-', row.rbi || '-',
@@ -4319,7 +4336,7 @@
         }
 
         function onTestComplete() {
-            if (currentTestingDC) testedDCs.add(currentTestingDC);
+            splitDataCenterList(currentTestingDC).forEach((dc) => testedDCs.add(dc));
             currentTestingDC = '';
             showDCSelection(dcList);
             const status = document.getElementById('currentTestDC');
@@ -4676,18 +4693,51 @@
             switchTab('scan');
         }
 
+        function splitDataCenterList(value) {
+            return [...new Set(String(value || '').split(/[,，;；|\s]+/).map((item) => item.trim().toUpperCase()).filter(Boolean))];
+        }
+
+        function isISOAlpha2CountryCode(value) {
+            return /^[A-Z]{2}$/.test(String(value || '').trim().toUpperCase());
+        }
+
+        function matchesDataCenterCodeOrCountry(dc, code) {
+            const normalized = String(code || '').trim().toUpperCase();
+            return String(dc.DataCenter || '').trim().toUpperCase() === normalized
+                || (isISOAlpha2CountryCode(normalized) && String(dc.DCCountry || '').trim().toUpperCase() === normalized);
+        }
+
+        function getConfiguredDataCenterCountryCodes() {
+            const filter = currentMode === 'nsb'
+                ? document.getElementById('nsbTargetDC')?.value || ''
+                : document.getElementById('officialTargetDC')?.value || '';
+            return splitDataCenterList(filter).filter(isISOAlpha2CountryCode);
+        }
+
         function maybeStartOfficialAutoTest() {
             if (!officialAutoSpeedPending || officialAutoStage !== 'scan') return false;
-            const targetDC = document.getElementById('officialTargetDC')?.value.trim().toUpperCase() || '';
-            const selected = targetDC ? dcList.find((dc) => String(dc.DataCenter || '').toUpperCase() === targetDC) : dcList[0];
-            if (!selected) {
-                log(targetDC ? `官方自动测速未找到数据中心: ${targetDC}` : '官方自动测速没有可用数据中心');
+            const targetDC = document.getElementById('officialTargetDC')?.value.trim() || '';
+            const requestedDCs = splitDataCenterList(targetDC);
+            const selectedByColo = new Map();
+            if (requestedDCs.length) {
+                for (const code of requestedDCs) {
+                    for (const dc of dcList.filter((item) => matchesDataCenterCodeOrCountry(item, code))) {
+                        selectedByColo.set(String(dc.DataCenter || '').toUpperCase(), dc);
+                    }
+                }
+            } else if (dcList.length) {
+                selectedByColo.set(String(dcList[0].DataCenter || '').toUpperCase(), dcList[0]);
+            }
+            const selectedDCs = [...selectedByColo.values()];
+            const missingDCs = requestedDCs.filter((code) => !dcList.some((dc) => matchesDataCenterCodeOrCountry(dc, code)));
+            if (!selectedDCs.length || missingDCs.length) {
+                log(missingDCs.length ? `官方自动测速未找到数据中心或国家码: ${missingDCs.join(', ')}` : '官方自动测速没有可用数据中心');
                 officialAutoSpeedPending = false;
                 officialAutoStage = '';
                 return false;
             }
             officialAutoStage = 'test';
-            selectDC(selected.DataCenter);
+            selectDC(selectedDCs.map((dc) => dc.DataCenter).join(','));
             return true;
         }
 
@@ -4845,6 +4895,7 @@
             if (qualifiedField) qualifiedField.style.display = '';
             const qualifiedSelect = document.getElementById('resultQualifiedFilter');
             if (qualifiedSelect) qualifiedSelect.value = 'all';
+            loadPerDataCenterMinimum();
             if (!resultFieldOrder.length) resultFieldOrder = getDefaultResultFieldOrder(document.getElementById('resultFormat').value);
             renderGitHubAccounts();
             renderResultFieldOptions();
@@ -4982,7 +5033,7 @@
         }
 
         function getDefaultResultFieldOrderFor(mode, format) {
-            if (format === 'txt') return mode === 'nsb' ? ['ipport', 'dc', 'loc'] : ['ipport', 'dc', 'dcCountry'];
+            if (format === 'txt') return mode === 'nsb' ? ['ipport', 'latency', 'lossRate', 'speed', 'dc', 'dcCountry', 'loc'] : ['ipport', 'latency', 'lossRate', 'speed', 'dc', 'dcCountry'];
             if (format === 'csv') return getCompactResultFieldOrderFor(mode);
             const rows = getCurrentResultRows(mode);
             if (!rows.length) return ['ipport'];
@@ -5003,14 +5054,12 @@
         }
 
         function getCompactResultFieldOrderFor(mode) {
-            if (mode === 'nsb') return ['ip', 'port', 'tls', 'lossRate', 'latency', 'speed', 'outboundIP', 'ipType', 'originalInput', 'dc', 'loc', 'region', 'city', 'asnNumber', 'asnOrg'];
+            if (mode === 'nsb') return ['ip', 'port', 'tls', 'lossRate', 'latency', 'speed', 'outboundIP', 'ipType', 'originalInput', 'dc', 'dcCountry', 'loc', 'region', 'city', 'asnNumber', 'asnOrg'];
             return getOfficialResultFieldOrder(mode);
         }
 
         function getOfficialResultFieldOrder(mode = resultModalMode) {
-            return mode === 'test'
-                ? ['ip', 'port', 'latency', 'speed', 'dc', 'dcCountry', 'region', 'city']
-                : ['ip', 'port', 'latency', 'dc', 'dcCountry', 'region', 'city'];
+            return ['ip', 'port', 'latency', 'lossRate', 'speed', 'dc', 'dcCountry', 'region', 'city'];
         }
 
         function renderResultFieldOptions() {
@@ -5454,6 +5503,7 @@
             if (qualifiedField) qualifiedField.style.display = '';
             const qualifiedSelect = document.getElementById('copyQualifiedFilter');
             if (qualifiedSelect) qualifiedSelect.value = 'all';
+            loadPerDataCenterMinimum();
             const rows = getCopyRowsBeforeRange();
             if (!rows.length) return showNoticeCard('暂无可复制结果');
             if (!copyFieldOrder.length) copyFieldOrder = getDefaultResultFieldOrderFor(copyModalMode, 'txt');
@@ -5467,7 +5517,8 @@
 
         function getCopyRowsBeforeRange() {
             const filter = document.getElementById('copyIPTypeFilter')?.value || 'all';
-            const qualified = document.getElementById('copyQualifiedFilter')?.value || 'all';
+            const minimum = getPerDataCenterMinimum();
+            const qualified = minimum > 0 ? 'qualified' : (document.getElementById('copyQualifiedFilter')?.value || 'all');
             if (currentMode === 'nsb') {
                 return getNSBResultObjects().filter((row) => matchesIPTypeFilter(row.ipType, filter) && matchesQualifiedFilter(row, qualified));
             }
@@ -5479,7 +5530,8 @@
             const rows = getCopyRowsBeforeRange();
             const start = Math.max(1, parseInt(document.getElementById('copyStartRow')?.value || '1', 10) || 1);
             const end = Math.max(start, parseInt(document.getElementById('copyEndRow')?.value || '20', 10) || 20);
-            return rows.slice(start - 1, end).map((row) => {
+            const selected = rows.slice(start - 1, end);
+            return applyPerDataCenterMinimum(selected, rows, getPerDataCenterMinimum()).map((row) => {
                 const next = { ...row };
                 for (const field of copyCustomFields) next[field.key] = field.value;
                 return next;
@@ -5602,6 +5654,103 @@
             copyToClipboard(content, event);
         }
 
+        const perDataCenterMinimumStorageKey = 'cfdata-export-dc-minimum';
+
+        function normalizePerDataCenterMinimum(value) {
+            const parsed = parseInt(String(value ?? '0'), 10);
+            return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+        }
+
+        function syncPerDataCenterMinimum(value, persist = false) {
+            const minimum = normalizePerDataCenterMinimum(value);
+            for (const prefix of ['result', 'copy']) {
+                const input = document.getElementById(`${prefix}DCMinCount`);
+                if (input) input.value = String(minimum);
+                const filter = document.getElementById(`${prefix}QualifiedFilter`);
+                if (!filter) continue;
+                if (minimum > 0) {
+                    filter.value = 'qualified';
+                    filter.disabled = true;
+                } else if (filter.disabled) {
+                    filter.disabled = false;
+                    filter.value = 'all';
+                }
+            }
+            if (persist) {
+                try {
+                    localStorage.setItem(perDataCenterMinimumStorageKey, String(minimum));
+                } catch (err) {
+                    console.warn('无法保存每数据中心最少 IP 配置:', err);
+                }
+            }
+            return minimum;
+        }
+
+        function loadPerDataCenterMinimum() {
+            let saved = '0';
+            try {
+                saved = localStorage.getItem(perDataCenterMinimumStorageKey) || '0';
+            } catch (err) {
+                console.warn('无法读取每数据中心最少 IP 配置:', err);
+            }
+            return syncPerDataCenterMinimum(saved);
+        }
+
+        function getPerDataCenterMinimum() {
+            try {
+                const saved = localStorage.getItem(perDataCenterMinimumStorageKey);
+                if (saved !== null) return normalizePerDataCenterMinimum(saved);
+            } catch (err) {
+                // Fall through to the active modal input when storage is unavailable.
+            }
+            const input = document.getElementById('resultDCMinCount') || document.getElementById('copyDCMinCount');
+            return input ? normalizePerDataCenterMinimum(input.value) : 0;
+        }
+
+        function updatePerDataCenterMinimum(value) {
+            const minimum = syncPerDataCenterMinimum(value, true);
+            if (document.getElementById('resultModalMask')?.classList.contains('active')) updateResultPreview();
+            if (document.getElementById('copyModalMask')?.classList.contains('active')) updateCopyPreview();
+            return minimum;
+        }
+
+        function applyPerDataCenterMinimum(selectedRows, qualifiedRows, minimum) {
+            if (minimum <= 0) return selectedRows;
+            const result = selectedRows.slice();
+            const seenRows = new Set();
+            const counts = new Map();
+            const countryCodes = new Set(getConfiguredDataCenterCountryCodes());
+            const quotaGroup = (row) => {
+                const dc = String(row.dc || '').trim().toUpperCase();
+                const country = String(row.dcCountry || '').trim().toUpperCase();
+                if (country && countryCodes.has(country)) return `country:${country}`;
+                return dc ? `colo:${dc}` : '';
+            };
+            for (const row of result) {
+                const key = exportRowIdentity(row);
+                if (seenRows.has(key)) continue;
+                seenRows.add(key);
+                const group = quotaGroup(row);
+                if (group) counts.set(group, (counts.get(group) || 0) + 1);
+            }
+            for (const row of qualifiedRows) {
+                const group = quotaGroup(row);
+                if (!group || (counts.get(group) || 0) >= minimum) continue;
+                const key = exportRowIdentity(row);
+                if (seenRows.has(key)) continue;
+                result.push(row);
+                seenRows.add(key);
+                counts.set(group, (counts.get(group) || 0) + 1);
+            }
+            return result;
+        }
+
+        function exportRowIdentity(row) {
+            const ip = String(row.ip || '').trim();
+            if (ip) return ip;
+            return String(row.ipport || row.originalInput || '').trim();
+        }
+
         function getCurrentResultRows(mode) {
             if (currentMode === 'nsb') return getNSBResultObjects();
             if (mode === 'test') return testData.map(testResultToObject);
@@ -5611,7 +5760,8 @@
         function getCurrentExportRows(mode) {
             const rows = getCurrentResultRows(mode);
             const filter = document.getElementById('resultIPTypeFilter')?.value || 'all';
-            const qualified = document.getElementById('resultQualifiedFilter')?.value || 'all';
+            const minimum = getPerDataCenterMinimum();
+            const qualified = minimum > 0 ? 'qualified' : (document.getElementById('resultQualifiedFilter')?.value || 'all');
             if (currentMode === 'nsb') {
                 return rows.filter((row) => matchesIPTypeFilter(row.ipType, filter) && matchesQualifiedFilter(row, qualified));
             }
@@ -5629,7 +5779,7 @@
         }
 
         function scanResultToObject(r) {
-            return { ip: r.IP || '', port: String(r.Port ?? ''), ipport: `${r.IP || ''}:${r.Port ?? ''}`, dc: r.DataCenter || '', dcCountry: r.DCCountry || '', region: r.Region || '', city: r.City || '', latency: r.LatencyStr || '' };
+            return { ip: r.IP || '', port: String(r.Port ?? ''), ipport: `${r.IP || ''}:${r.Port ?? ''}`, dc: r.DataCenter || '', dcCountry: r.DCCountry || '', region: r.Region || '', city: r.City || '', latency: r.LatencyStr || '', lossRate: '未测' };
         }
 
         function testResultToObject(r) {
@@ -5644,6 +5794,7 @@
                 region: scan.Region || r.Region || '',
                 city: scan.City || r.City || '',
                 latency: `${(r.AvgLatency / 1_000_000).toFixed(0)}ms`,
+                lossRate: `${(r.LossRate * 100).toFixed(0)}%`,
                 speed: r.Speed || '未测速',
             };
         }
@@ -5721,7 +5872,8 @@
             const rows = getCurrentExportRows(resultModalMode);
             const start = Math.max(1, parseInt(document.getElementById('resultStartRow')?.value || '1', 10) || 1);
             const end = Math.max(start, parseInt(document.getElementById('resultEndRow')?.value || '20', 10) || 20);
-            return rows.slice(start - 1, end).map((row) => {
+            const selected = rows.slice(start - 1, end);
+            return applyPerDataCenterMinimum(selected, rows, getPerDataCenterMinimum()).map((row) => {
                 const next = { ...row };
                 for (const field of resultCustomFields) next[field.key] = field.value;
                 return next;
@@ -5915,6 +6067,12 @@
             }
             const fields = getDefaultResultFieldOrderFor(mode, format || 'txt');
             let rows = getCurrentResultRows(mode);
+            const minimumPerDC = getPerDataCenterMinimum();
+            if (minimumPerDC > 0) {
+                rows = rows.filter((row) => mode === 'nsb'
+                    ? matchesQualifiedFilter(row, 'qualified')
+                    : matchesOfficialQualifiedFilter(row, 'qualified'));
+            }
             if (!rows.length) {
                 log('自动上传跳过: 没有可上传结果');
                 return;

@@ -506,15 +506,20 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 		ipIdx := 0
 		if fileCfg.IPType == 6 {
 			ipIdx = 1
+		} else if fileCfg.IPType == 46 {
+			ipIdx = 2
 		}
-		idx, o = askChoice("IP类型", "官方优选扫描的 IP 池版本", []string{"IPv4", "IPv6"}, ipIdx)
+		idx, o = askChoice("IP类型", "官方优选扫描的 IP 池版本", []string{"IPv4", "IPv6", "IPv4 + IPv6"}, ipIdx)
 		if o != promptOK {
 			return o
 		}
-		if idx == 0 {
-			fileCfg.IPType = 4
-		} else {
+		switch idx {
+		case 1:
 			fileCfg.IPType = 6
+		case 2:
+			fileCfg.IPType = 46
+		default:
+			fileCfg.IPType = 4
 		}
 
 		n, o = askInt("测试端口", strconv.Itoa(fileCfg.TestPort), "官方扫描目标端口，1-65535", fileCfg.TestPort, 1, 65535)
@@ -535,7 +540,7 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 		if strings.TrimSpace(fileCfg.NSBDC) != "" {
 			dcCurrent = fileCfg.NSBDC
 		}
-		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT）；输入 0=不限制结果数据中心")
+		v, o := askLine("数据中心", dcCurrent, "colo 代码或 ISO 国家码；多个用逗号分隔（如 HKG,HK,US）；输入 0=不限制结果数据中心")
 		if o != promptOK {
 			return o
 		}
@@ -545,7 +550,7 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 			fileCfg.NSBDC = v
 		}
 	} else {
-		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT）；输入 0=自动选择最低延迟数据中心")
+		v, o := askLine("数据中心", dcCurrent, "colo 代码或 ISO 国家码；多个用逗号分隔（如 HKG,HK,US）；输入 0=自动选择最低延迟数据中心")
 		if o != promptOK {
 			return o
 		}
@@ -736,6 +741,12 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 	case 2:
 		fileCfg.OutQualified = "unqualified"
 	}
+
+	n, o = askInt("每数据中心最少 IP", strconv.Itoa(fileCfg.OutDCMinCount), "只统计延迟、速度均达标的结果；0=关闭；为满足配额可能超过结束行，不足时不会用不合格 IP 补足", fileCfg.OutDCMinCount, 0, 0)
+	if o != promptOK {
+		return o
+	}
+	fileCfg.OutDCMinCount = n
 
 	ipFilterIdx := 0
 	switch strings.ToLower(strings.TrimSpace(fileCfg.OutIPType)) {

@@ -310,31 +310,54 @@ func measureHTTPTTFB(ctx context.Context, ip string, port int, effectiveDelay in
 	return ttfb, ""
 }
 
+func officialIPTypes(ipType int) []int {
+	switch ipType {
+	case 4, 6:
+		return []int{ipType}
+	case 46:
+		return []int{4, 6}
+	default:
+		return nil
+	}
+}
+
 func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanMaxThreads int, port int, delay int, scanMode string) {
-	filename := "ips-v4.txt"
-	apiURL := "https://www.baipiao.eu.org/cloudflare/ips-v4"
-	if ipType == 6 {
-		filename = "ips-v6.txt"
-		apiURL = "https://www.baipiao.eu.org/cloudflare/ips-v6"
-	}
-
-	content, err := getIPListContent(filename, apiURL)
-	if err != nil {
-		session.sendWSMessage("error", err.Error())
+	ipTypes := officialIPTypes(ipType)
+	if len(ipTypes) == 0 {
+		session.sendWSMessage("error", "官方 IP 类型仅支持 4、6 或 46（IPv4 + IPv6）")
 		return
 	}
 
-	ipList, err := parseIPList(content)
-	if err != nil {
-		session.sendWSMessage("error", "解析 IP 列表失败: "+err.Error())
-		return
+	var ipList []string
+	for _, family := range ipTypes {
+		filename := "ips-v4.txt"
+		apiURL := "https://www.baipiao.eu.org/cloudflare/ips-v4"
+		if family == 6 {
+			filename = "ips-v6.txt"
+			apiURL = "https://www.baipiao.eu.org/cloudflare/ips-v6"
+		}
+		content, err := getIPListContent(filename, apiURL)
+		if err != nil {
+			session.sendWSMessage("error", err.Error())
+			return
+		}
+		familyIPs, err := parseIPList(content)
+		if err != nil {
+			session.sendWSMessage("error", "解析 IP 列表失败: "+err.Error())
+			return
+		}
+		if family == 6 {
+			familyIPs = getRandomIPv6s(familyIPs)
+		} else {
+			familyIPs = getRandomIPv4s(familyIPs)
+		}
+		ipList = append(ipList, familyIPs...)
 	}
-	if ipType == 6 {
-		ipList = getRandomIPv6s(ipList)
-	} else {
-		ipList = getRandomIPv4s(ipList)
+	familyLabel := fmt.Sprintf("IPv%d", ipTypes[0])
+	if len(ipTypes) > 1 {
+		familyLabel = "IPv4 + IPv6"
 	}
-	session.sendWSMessage("log", fmt.Sprintf("开始扫描：%d 条记录", len(ipList)))
+	session.sendWSMessage("log", fmt.Sprintf("开始扫描 %s：%d 条记录", familyLabel, len(ipList)))
 
 	session.scanMutex.Lock()
 	session.scanResults = []ScanResult{}
@@ -455,7 +478,7 @@ func runDetailedTest(ctx context.Context, session *appSession, selectedDC string
 	scanByIP := make(map[string]ScanResult)
 	session.scanMutex.Lock()
 	for _, res := range session.scanResults {
-		if selectedDC == "" || res.DataCenter == selectedDC {
+		if matchesDataCenterOrCountryFilter(res.DataCenter, res.DCCountry, selectedDC) {
 			testIPList = append(testIPList, res.IP)
 			scanByIP[res.IP] = res
 		}

@@ -24,7 +24,7 @@ CFData-Web 是一个基于 Go 的 Cloudflare IP 测试与筛选工具，提供�
 - 官方优选：扫描 Cloudflare IPv4/IPv6，按数据中心继续详细延迟测试。
 - 非标优选：上传本地 txt/csv 或填写网络 URL，测试自定义 IP/域名与端口。
 - 测速：支持单点测速、批量测速、非标并发测速和测速阈值筛选。
-- 导出：支持 CSV/TXT、自定义字段、IP 类型筛选、合格结果筛选。
+- 导出：支持 CSV/TXT、自定义字段、IP 类型筛选、合格结果筛选；默认精简结果包含延迟、丢包率、测速速度和落地区域（如 HKG→HK、SJC/LAX→US）。
 - 上传：支持将导出结果上传到 GitHub。
 - CLI：交互菜单、参数设置向导、定时任务、配置自动迁移。
 - APK：支持 Android WebView 壳运行内置后端。
@@ -61,8 +61,8 @@ CLI 模式（进入交互菜单）：
 # 按已保存配置快速启动（qs 大小写不敏感）
 ./cfdata-linux-amd64 -cli qs
 
-# 官方模式直接执行：扫描 IPv4，测试 443 端口，测速地址自动选择
-./cfdata-linux-amd64 -cli -mode official -offiptype 4 -offport 443 -offurl auto
+# 官方模式直接执行：一次扫描 IPv4+IPv6，测试 443 端口，测速地址自动选择
+./cfdata-linux-amd64 -cli -mode official -offiptype 46 -offdc HK,US -offport 443 -offurl auto
 
 # 非标模式直接执行：读取本地文件，开启 TLS 和 5 个测速线程
 ./cfdata-linux-amd64 -cli -mode nsb -nsbfile ip.txt -nsbtls=true -nsbspeedtest 5 -nsburl auto
@@ -81,7 +81,7 @@ CLI 模式（进入交互菜单）：
 
 ### 官方优选
 
-1. 选择 IPv4 或 IPv6。
+1. 选择 IPv4、IPv6 或 IPv4 + IPv6（一次扫描双栈）。
 2. 设置测试端口、扫描并发、延迟阈值。
 3. 点击“开始扫描与测试”。
 4. 扫描完成后选择数据中心继续详细测试。
@@ -134,7 +134,9 @@ CLI 可通过 `-offurl`/`-nsburl` 指定：
 -cli              启用 CLI 模式
 -mode             official 或 nsb
 -scanmode         扫描方式：tcping（默认，TCP 握手延迟）或 httping（HTTP TTFB，延迟比 tcping 高属正常，不同模式数据不可对比）
+-offiptype        官方扫描 IP 类型：4=IPv4、6=IPv6、46=IPv4+IPv6
 -offthreads       官方扫描并发数
+-offdc            官方模式 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,US；国家码会匹配该国所有 colo
 -nsbthreads       非标扫描并发数
 -offport          官方测试/测速端口
 -offdelay         官方延迟阈值，单位毫秒
@@ -145,6 +147,7 @@ CLI 可通过 `-offurl`/`-nsburl` 指定：
 -debug            调试日志等级：false、error、all
 -skipgeo          跳过地区/代理环境验证（启动时不再提示代理警告）
 -out              输出文件名（官方/非标通用），默认 cfdata-results
+-outdcmincount    每个数据中心至少导出达标 IP 数；0=关闭，只统计延迟与速度均达标的结果，配额可超过结束行
 ```
 
 非标常用参数：
@@ -155,6 +158,7 @@ CLI 可通过 `-offurl`/`-nsburl` 指定：
 -nsbfallbackport  非标输入缺省端口；不传时随 TLS 自动使用 443/80
 -nsbtls           非标是否启用 TLS
 -nsbspeedtest     非标测速线程数，0 表示不测速。多 IP 并发影响实际速度，需要准确应设为 1
+-nsbdc            非标结果 colo 或 ISO 国家码；逗号分隔可多选，如 HKG,US；国家码会匹配该国所有 colo
 -nsbresultlimit   非标延迟测试结果上限
 -nsbspeedmin      非标测速合格阈值，单位 MB/s
 -nsbspeedlimit    非标测速合格结果上限
